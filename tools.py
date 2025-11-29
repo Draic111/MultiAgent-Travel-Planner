@@ -196,10 +196,18 @@ def search_oneWay_flights(origin: str, dest: str, depart_date: str, num_people: 
     normalized = []
 
     for f in flight_raw:
-        price = f.get("price")
-        if price > budget:
+        price_raw = f.get("price")
+        price = parse_price(price_raw)
+        # 如果价格缺失或无法解析，跳过该航班，避免类型错误
+        if price is None:
             continue
-        segments = f.get("flights", [])
+        if budget is not None and price > budget:
+            continue
+
+        segments = f.get("flights", []) or []
+        if not segments:
+            continue
+
         dep_airport = segments[0].get("departure_airport") or {}
         arr_airport = segments[-1].get("arrival_airport") or {}
 
@@ -213,11 +221,12 @@ def search_oneWay_flights(origin: str, dest: str, depart_date: str, num_people: 
         # Combine all info
         normalized.append({
             "price": price,
-            "airlines": airlines,    
-            # in-flight duration        
+            "price_display": price_raw,
+            "airlines": airlines,
+            # in-flight duration
             "total_duration": f.get("total_duration"),
             "departure_airport": dep_airport.get("id"),
-            "depart_time": dep_airport.get("time"),            
+            "depart_time": dep_airport.get("time"),
             "arrival_airport": arr_airport.get("id"),
             "arrival_time": arr_airport.get("time"),
         })
