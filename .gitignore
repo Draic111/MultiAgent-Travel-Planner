@@ -26,26 +26,32 @@ lerna-debug.log*
 
 # 构建输出
 dist/
+dist-ssr/
 build/
 *.egg-info/
 
+# 日志文件
+logs/
+*.log
+
 # IDE 和编辑器
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 *~
-.DS_Store
-
-# 日志文件
-*.log
-logs/
 
 # 操作系统文件
-Thumbs.db
 .DS_Store
+Thumbs.db
 
 # 临时文件
 *.tmp
 *.temp
-
+*.local

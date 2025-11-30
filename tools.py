@@ -201,8 +201,9 @@ def search_oneWay_flights(origin: str, dest: str, depart_date: str, num_people: 
         # 如果价格缺失或无法解析，跳过该航班，避免类型错误
         if price is None:
             continue
-        if budget is not None and price > budget:
-            continue
+        # if budget is not None and price > budget:
+        #     continue
+        total_price = price * num_people
 
         segments = f.get("flights", []) or []
         if not segments:
@@ -220,7 +221,7 @@ def search_oneWay_flights(origin: str, dest: str, depart_date: str, num_people: 
 
         # Combine all info
         normalized.append({
-            "price": price,
+            "price": total_price,
             "price_display": price_raw,
             "airlines": airlines,
             # in-flight duration
@@ -285,8 +286,7 @@ def search_hotels(dest, check_in, check_out, num_people, budget):
         check_in (str): check in date
         check_out (str): check out date
         num_adults (int): number of travelers
-        budget: total budget (input(budget) * num_people)
-
+        budget: total budget for all travelers
     Returns: 
         list(dict): List of feasible accommodations in JSON format
     """
@@ -312,12 +312,16 @@ def search_hotels(dest, check_in, check_out, num_people, budget):
     output = []
     for h in hotels:
         price_in_num = parse_price(h.get("rate_per_night", {}).get("lowest"))
+
+        if price_in_num is None:
+            continue
+
         if price_in_num is not None:
             total_price_num = price_in_num * nights
         else:
             total_price_num = None
-        
-        if price_in_num <= budget:
+
+        if total_price_num <= budget:
             output.append({
                 "name": h.get("name"),
                 "price_per_night": h.get("rate_per_night", {}).get("lowest"), # String Price（ex. "$118"）
@@ -328,6 +332,7 @@ def search_hotels(dest, check_in, check_out, num_people, budget):
                 "class": h.get("extracted_hotel_class"),
             })
     return output
+
 
 @tool
 def compute_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
