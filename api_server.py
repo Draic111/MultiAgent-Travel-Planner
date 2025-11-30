@@ -7,7 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 from pipeline import run_pipeline
+from formatter_agent import format_trip
 import uvicorn
+import asyncio
 
 app = FastAPI(title="Travel Planner API", version="1.0.0")
 
@@ -71,8 +73,8 @@ async def create_travel_plan(request: PlanRequest):
             "total_budget": request.budget,  # Map budget -> total_budget
         }
         
-        # Run the pipeline
-        result = run_pipeline(trip_config, verbose=False)
+        # Run the pipeline in a thread pool to avoid blocking the event loop
+        result = await asyncio.to_thread(run_pipeline, trip_config, False)
         
         return result
         
@@ -96,13 +98,42 @@ async def create_travel_plan_verbose(request: PlanRequest):
             "total_budget": request.budget,
         }
         
-        # Run the pipeline with verbose output
-        result = run_pipeline(trip_config, verbose=True)
+        # Run the pipeline in a thread pool to avoid blocking the event loop
+        result = await asyncio.to_thread(run_pipeline, trip_config, True)
         
         return result
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating plan: {str(e)}")
+
+
+@app.post("/api/plan/text", response_model=dict)
+async def create_travel_plan_text(request: PlanRequest):
+    """
+    Create a travel plan and return a human-readable text summary
+    """
+    try:
+        trip_config = {
+            "origin_city": request.origin_city,
+            "destination_city": request.destination_city,
+            "check_in_date": request.departure_date,
+            "check_out_date": request.return_date,
+            "num_people": request.num_people,
+            "total_budget": request.budget,
+        }
+        # Run pipeline (non-verbose by default)
+        result = await asyncio.to_thread(run_pipeline, trip_config, verbose=False)
+        
+        # Format to natural language (full-text summary)
+        # Use summary_text from pipeline if available, otherwise generate it
+        if result.get("summary_text"):
+            text = result["summary_text"]
+        else:
+            text = format_trip(result, verbose=False)
+        
+        return {"text": text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating formatted plan: {str(e)}")
 
 
 if __name__ == "__main__":

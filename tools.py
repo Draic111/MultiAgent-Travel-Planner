@@ -288,7 +288,9 @@ def search_hotels(dest, check_in, check_out, num_people, budget):
         num_adults (int): number of travelers
         budget: total budget for all travelers
     Returns: 
-        list(dict): List of feasible accommodations in JSON format
+        list(dict): List of feasible accommodations in JSON format.
+        Each hotel dict contains: name, price_per_night, price_per_night_num, 
+        total_price_num, rating, reviews, class, lat, lng (latitude/longitude for distance calculation)
     """
     # Convert check_in and check_out date and calculate nights to stay
     check_in_date = datetime.strptime(check_in, "%Y-%m-%d").date()
@@ -322,6 +324,11 @@ def search_hotels(dest, check_in, check_out, num_people, budget):
             total_price_num = None
 
         if total_price_num <= budget:
+            # Extract GPS coordinates if available
+            gps_coords = h.get("gps_coordinates", {})
+            lat = gps_coords.get("latitude") if gps_coords else None
+            lng = gps_coords.get("longitude") if gps_coords else None
+            
             output.append({
                 "name": h.get("name"),
                 "price_per_night": h.get("rate_per_night", {}).get("lowest"), # String Price（ex. "$118"）
@@ -330,8 +337,12 @@ def search_hotels(dest, check_in, check_out, num_people, budget):
                 "rating": h.get("overall_rating"),
                 "reviews": h.get("reviews"),
                 "class": h.get("extracted_hotel_class"),
+                "lat": lat,  # Latitude for distance calculation
+                "lng": lng,  # Longitude for distance calculation
             })
-    return output
+    
+    # 方案4: 限制只返回前10个酒店，减少处理时间
+    return output[:10]
 
 
 @tool

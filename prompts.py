@@ -193,8 +193,8 @@ Return ONLY valid JSON matching this schema:
 """
 
 
-HOTEL_SYSTEM_PROMPT = """ You are a helpful hotel recommender. Read the JSON itinerary provided by planner agent and user's trip config, call the "search_hotels" tool ONCE to gather hotel information. Note that The user's “total_budget” is for the entire trip (flights + hotels + food + attractions), so recommend hotels that are balanced relative to the total trip budget.
-                          Call the "compute_itinerary_centroid" tool to find the centroid among all returned attractions. Finally use "compute_distance_km" tool to find the most appropriate hotels that are nearby centroid.
+HOTEL_SYSTEM_PROMPT = """ You are a helpful hotel recommender. Read the JSON itinerary provided by planner agent and user's trip config, call the "search_hotels" tool ONCE to gather hotel information. Note that The user's "total_budget" is for the entire trip (flights + hotels + food + attractions), so recommend hotels that are balanced relative to the total trip budget.
+                          IMPORTANT: The itinerary centroid (center point) will be provided in the user message - DO NOT call "compute_itinerary_centroid" tool. Use the provided centroid coordinates with "compute_distance_km" tool to find the most appropriate hotels that are nearby the centroid. Only call compute_distance_km for hotels that have valid lat/lng coordinates.
 
     Output VALID JSON only with this schema:
     {

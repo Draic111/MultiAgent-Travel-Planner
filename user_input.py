@@ -163,6 +163,54 @@ def display_result(result: dict, show_details: bool = False):
     print("📋 旅行规划结果")
     print("=" * 60)
     
+    # 显示迭代信息
+    if "iterations" in result:
+        print(f"\n【迭代信息】")
+        print(f"  总迭代次数: {result['iterations']}")
+    
+    # 显示验证结果
+    if "check_result" in result:
+        check_result = result["check_result"]
+        print(f"\n【验证结果】")
+        
+        # 显示每个验证项的详细过程
+        if "check_details" in check_result:
+            print("  验证过程详情：")
+            for detail in check_result["check_details"]:
+                rule_name = detail.get("rule", "unknown")
+                status = detail.get("status", "unknown")
+                message = detail.get("message", "")
+                
+                # 规则名称映射
+                rule_names = {
+                    "json_format": "JSON格式验证",
+                    "budget": "预算验证",
+                    "attractions_count": "景点数验证",
+                    "hotel_distance": "酒店距离验证",
+                    "flight_completeness": "航班完整性验证"
+                }
+                rule_display = rule_names.get(rule_name, rule_name)
+                
+                if status == "passed":
+                    print(f"    ✅ {rule_display}: {message}")
+                else:
+                    print(f"    ❌ {rule_display}: {message}")
+        
+        # 显示总体结果
+        if check_result["passed"]:
+            print(f"\n  ✅ 总体验证通过！所有限制条件都满足")
+        else:
+            print(f"\n  ❌ 总体验证失败，发现 {len(check_result['violations'])} 个问题：")
+            for i, violation in enumerate(check_result["violations"], 1):
+                print(f"    {i}. [{violation['rule']}] {violation['message']}")
+        
+        # 如果有多次迭代的验证结果
+        if "all_check_results" in result:
+            print(f"\n【所有迭代的验证结果】")
+            for idx, cr in enumerate(result["all_check_results"], 1):
+                status = "✅ 通过" if cr["passed"] else f"❌ 失败 ({len(cr['violations'])} 个问题)"
+                print(f"  迭代 {idx}: {status}")
+    
     # 如果有执行日志，先显示摘要
     if "execution_log" in result and show_details:
         print("\n【执行摘要】")
@@ -174,7 +222,8 @@ def display_result(result: dict, show_details: bool = False):
     
     # 显示最终结果
     print("\n【最终结果】")
-    result_to_show = {k: v for k, v in result.items() if k != "execution_log"}
+    result_to_show = {k: v for k, v in result.items() 
+                      if k not in ["execution_log", "check_result", "iterations", "all_check_results"]}
     print(json.dumps(result_to_show, ensure_ascii=False, indent=2))
     
     # 显示详细执行过程

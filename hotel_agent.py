@@ -51,7 +51,21 @@ def recommend_hotels(trip_config, itinerary_json, verbose=False):
         如果verbose=False: 返回提取的JSON结果
         如果verbose=True: 返回包含结果和执行过程的字典
     """
+    # 方案1: 预计算中心点，避免 Agent 多次调用
+    centroid = compute_itinerary_centroid.invoke({"itinerary_json": itinerary_json})
+    centroid_lat = centroid.get("lat_center")
+    centroid_lng = centroid.get("lng_center")
+    
     trip_json = json.dumps(trip_config, ensure_ascii=True, indent = 2)
+    
+    # 将中心点信息加入用户消息，让 Agent 直接使用
+    centroid_info = ""
+    if centroid_lat is not None and centroid_lng is not None:
+        centroid_info = f"\n\nIMPORTANT: The itinerary centroid (center point) has been pre-calculated:\n"
+        centroid_info += f"Centroid Latitude: {centroid_lat}\n"
+        centroid_info += f"Centroid Longitude: {centroid_lng}\n"
+        centroid_info += "You can use these coordinates directly with compute_distance_km tool. "
+        centroid_info += "DO NOT call compute_itinerary_centroid tool again - it's already calculated."
 
     user_message = {"messages":
     [
@@ -61,8 +75,9 @@ def recommend_hotels(trip_config, itinerary_json, verbose=False):
                 "Here is the trip config:\n"
                 f"{trip_json}\n\n"
                 "Here is the itinerary JSON from the planner agent:\n"
-                f"{itinerary_json}\n\n"
-                "Please give me some hotel recommendations "   
+                f"{itinerary_json}\n"
+                f"{centroid_info}\n"
+                "Please give me some hotel recommendations."
             )
         }
     ]
@@ -70,6 +85,45 @@ def recommend_hotels(trip_config, itinerary_json, verbose=False):
 
     result = hotel_agent.invoke(user_message)
     final_message = result["messages"][-1]
+    
+    # 从 Agent 的消息历史中提取 search_hotels 工具的原始返回结果
+    search_hotels_raw_result = None
+    for msg in result["messages"]:
+        # 查找工具调用的返回结果
+        # LangChain 中工具返回通常在 ToolMessage 中
+        if hasattr(msg, "name") and msg.name == "search_hotels":
+            try:
+                content = getattr(msg, "content", None)
+                if content:
+                    if isinstance(content, str):
+                        # 尝试解析 JSON
+                        try:
+                            search_hotels_raw_result = json.loads(content)
+                        except:
+                            # 如果不是 JSON，可能是列表的字符串表示
+                            search_hotels_raw_result = content
+                    elif isinstance(content, list):
+                        search_hotels_raw_result = content
+                    if search_hotels_raw_result:
+                        break
+            except:
+                pass
+    
+    # 如果从消息中找不到，手动调用一次 search_hotels 获取原始结果
+    # 这样可以确保获取到包含 lat/lng 的完整数据
+    if search_hotels_raw_result is None or not isinstance(search_hotels_raw_result, list):
+        try:
+            search_hotels_raw_result = search_hotels.invoke({
+                "dest": trip_config["destination_city"],
+                "check_in": trip_config["check_in_date"],
+                "check_out": trip_config["check_out_date"],
+                "num_people": trip_config["num_people"],
+                "budget": trip_config["total_budget"]
+            })
+        except Exception as e:
+            if verbose:
+                print(f"警告: 无法获取 search_hotels 原始结果: {e}")
+            search_hotels_raw_result = []
     
     if verbose:
         # 提取执行过程
@@ -114,13 +168,70 @@ def recommend_hotels(trip_config, itinerary_json, verbose=False):
             
             execution_steps.append(step_info)
         
+        hotel_data = extract_json(final_message.content)
+    else:
+        hotel_data = extract_json(final_message.content)
+    
+    # 计算每个酒店到中心点的距离并添加到结果中
+    # 通过名称匹配从原始工具结果中获取 lat/lng
+    if hotel_data.get("recommended_hotels") and search_hotels_raw_result and centroid_lat is not None and centroid_lng is not None:
+        # 创建名称到原始酒店数据的映射（用于匹配）
+        raw_hotels_map = {}
+        for raw_hotel in search_hotels_raw_result:
+            hotel_name = raw_hotel.get("name", "").strip().lower()
+            if hotel_name:
+                raw_hotels_map[hotel_name] = raw_hotel
+        
+        for hotel in hotel_data["recommended_hotels"]:
+            hotel_name = hotel.get("name", "").strip()
+            hotel_name_lower = hotel_name.lower()
+            
+            # 尝试精确匹配
+            matched_raw_hotel = raw_hotels_map.get(hotel_name_lower)
+            
+            # 如果精确匹配失败，尝试模糊匹配（去除标点、空格等）
+            if not matched_raw_hotel:
+                for raw_name, raw_hotel in raw_hotels_map.items():
+                    # 简单的模糊匹配：去除常见标点和空格后比较
+                    normalized_raw = re.sub(r'[^\w]', '', raw_name)
+                    normalized_hotel = re.sub(r'[^\w]', '', hotel_name_lower)
+                    if normalized_raw == normalized_hotel:
+                        matched_raw_hotel = raw_hotel
+                        break
+            
+            if matched_raw_hotel:
+                hotel_lat = matched_raw_hotel.get("lat")
+                hotel_lng = matched_raw_hotel.get("lng")
+                if hotel_lat is not None and hotel_lng is not None:
+                    try:
+                        distance = compute_distance_km.invoke({
+                            "lat1": hotel_lat,
+                            "lng1": hotel_lng,
+                            "lat2": centroid_lat,
+                            "lng2": centroid_lng
+                        })
+                        hotel["distance_km"] = round(distance, 2)
+                    except Exception as e:
+                        if verbose:
+                            print(f"警告: 计算酒店 '{hotel_name}' 距离失败: {e}")
+                        hotel["distance_km"] = None
+                else:
+                    if verbose:
+                        print(f"警告: 酒店 '{hotel_name}' 在原始结果中缺少位置信息")
+                    hotel["distance_km"] = None
+            else:
+                if verbose:
+                    print(f"警告: 无法在原始结果中找到酒店 '{hotel_name}' 的匹配项")
+                hotel["distance_km"] = None
+    
+    if verbose:
         return {
-            "result": extract_json(final_message.content),
+            "result": hotel_data,
             "execution_steps": execution_steps,
             "full_messages": result["messages"]
         }
     else:
-        return extract_json(final_message.content)
+        return hotel_data
 
 
 
